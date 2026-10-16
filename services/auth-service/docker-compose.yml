@@ -1,0 +1,67 @@
+# ──────────────────────────────────────────────────────────────────
+# auth-service + its OWN PostgreSQL instance (database-per-service).
+#
+# This file is self-contained: `auth-service` depends only on its own
+# `auth-postgres`, so it runs in isolation with nothing else up:
+#
+#   docker network create callbooking            # once
+#   bash scripts/gen-jwt-keys.sh                 # once
+#   docker-compose --env-file .env -f services/auth-service/docker-compose.yml up --build
+#
+# To move it to a dedicated server, ship this file + the image and point
+# the host at it — no other service's database or config is involved.
+# ──────────────────────────────────────────────────────────────────
+
+networks:
+  default:
+    name: callbooking
+    external: true
+
+services:
+  auth-postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${AUTH_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${AUTH_POSTGRES_PASSWORD}
+      POSTGRES_DB: ${AUTH_POSTGRES_DB}
+    volumes:
+      - auth_pg_data:/var/lib/postgresql/data
+    ports:
+      - "${AUTH_POSTGRES_HOST_PORT:-5433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${AUTH_POSTGRES_USER} -d ${AUTH_POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  auth-service:
+    build: .
+    environment:
+      # Per-service DB credentials — auth has its own user/password/host.
+      POSTGRES_USER: ${AUTH_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${AUTH_POSTGRES_PASSWORD}
+      POSTGRES_HOST: ${AUTH_POSTGRES_HOST}
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${AUTH_POSTGRES_DB}
+      # RS256: auth-service is the only holder of the private key (signer).
+      # The algorithm is hard-coded to RS256 in app/config.py and intentionally
+      # NOT passed from the environment — it is bound to the RSA keys, so a stray
+      # JWT_ALGORITHM in the host shell must never be able to flip it to HS256.
+      JWT_PRIVATE_KEY_PATH: /keys/private.pem
+      JWT_PUBLIC_KEY_PATH: /keys/public.pem
+      JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES}
+    volumes:
+      - ../../infra/jwt:/keys:ro
+    ports:
+      - "${AUTH_PORT}:8001"
+    depends_on:
+      auth-postgres: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+volumes:
+  auth_pg_data:

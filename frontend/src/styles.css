@@ -1,0 +1,84 @@
+:root {
+  --bg: #0f172a;
+  --card: #1e293b;
+  --border: #334155;
+  --text: #e2e8f0;
+  --muted: #94a3b8;
+  --primary: #6366f1;
+  --ok: #22c55e;
+  --warn: #f59e0b;
+  --bad: #ef4444;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.container { max-width: 960px; margin: 0 auto; padding: 24px; }
+.container.narrow { max-width: 420px; padding-top: 80px; }
+
+header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+header > div { display: flex; align-items: center; gap: 12px; }
+
+h1 { font-size: 24px; }
+h2 { font-size: 16px; margin-top: 0; }
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 16px;
+}
+
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
+
+input {
+  width: 100%;
+  padding: 10px;
+  margin: 6px 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+}
+
+label { display: block; font-size: 13px; color: var(--muted); }
+
+button {
+  padding: 9px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--text);
+  cursor: pointer;
+}
+button:hover { border-color: var(--primary); }
+button.primary { background: var(--primary); border-color: var(--primary); color: white; }
+button.small { padding: 4px 10px; font-size: 13px; }
+
+.tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+.tabs button.active { background: var(--primary); border-color: var(--primary); color: white; }
+
+table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border); font-size: 14px; }
+th { color: var(--muted); font-weight: 500; }
+
+.badge { padding: 2px 8px; border-radius: 999px; font-size: 12px; }
+.badge.available, .badge.active { background: rgba(34,197,94,.15); color: var(--ok); }
+.badge.booked { background: rgba(245,158,11,.15); color: var(--warn); }
+.badge.cancelled { background: rgba(239,68,68,.15); color: var(--bad); }
+
+.stats { list-style: none; padding: 0; display: flex; gap: 16px; }
+.stats li { display: flex; flex-direction: column; }
+.stats b { font-size: 24px; }
+.stats span { font-size: 12px; color: var(--muted); }
+
+.muted { color: var(--muted); }
+.error { color: var(--bad); margin-top: 12px; }

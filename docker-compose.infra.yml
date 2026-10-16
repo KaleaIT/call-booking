@@ -1,0 +1,99 @@
+# ──────────────────────────────────────────────────────────────────
+# Shared infrastructure backbone: message broker, cache, OLAP store
+# and the Kafka web UI. These are cross-cutting and shared by several
+# services (a real platform would run a managed cluster per box).
+#
+# Per-service *databases* do NOT live here — each service owns and
+# ships its own datastore in its own compose file (database-per-service).
+#
+# All compose files attach to the pre-created external network
+# `callbooking` so any single file can run on its own and still reach
+# the rest:  docker network create callbooking
+# ──────────────────────────────────────────────────────────────────
+
+networks:
+  default:
+    name: callbooking
+    external: true
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_HOST_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  kafka:
+    # Official Apache Kafka image, single-node KRaft (no zookeeper).
+    image: apache/kafka:3.7.0
+    environment:
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    ports:
+      - "${KAFKA_HOST_PORT:-9092}:9092"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+
+  kafdrop:
+    # Web UI for browsing Kafka topics, messages and consumer-group lag.
+    # Not exposed on a host port (the SSH tunnel only forwards a fixed set);
+    # reached through the api-gateway at http://localhost:8080/kafdrop/.
+    image: obsidiandynamics/kafdrop:4.0.1
+    environment:
+      KAFKA_BROKERCONNECT: ${KAFKA_BOOTSTRAP_SERVERS}
+      # Serve under /kafdrop so nginx can reverse-proxy it on a sub-path.
+      SERVER_SERVLET_CONTEXTPATH: /kafdrop
+      JVM_OPTS: "-Xms64M -Xmx128M"
+    depends_on:
+      kafka: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9000/kafdrop/actuator/health >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24-alpine
+    environment:
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    # SYS_NICE lets ClickHouse set its NUMA memory policy; without it the
+    # container floods logs with `get_mempolicy: Operation not permitted`
+    # (blocked by Docker's default seccomp profile). Harmless but noisy.
+    cap_add:
+      - SYS_NICE
+    ports:
+      - "${CLICKHOUSE_HTTP_HOST_PORT:-8123}:8123"
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "127.0.0.1:8123/ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+
+volumes:
+  clickhouse_data:

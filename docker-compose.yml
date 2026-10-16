@@ -1,0 +1,64 @@
+name: call-booking
+
+# ──────────────────────────────────────────────────────────────────
+# Call-Booking microservice platform — root orchestrator.
+#
+# This file does NOT redefine services. It `include`s one self-contained
+# compose file per service (each ships its own database) plus the shared
+# infra file, and adds only the two cross-cutting pieces that have no
+# single owner: the SPA frontend and the nginx API gateway.
+#
+# The split is the whole point: every included file also runs on its own
+# (`docker-compose -f services/<svc>/docker-compose.yml up`), which is
+# exactly what you would do to move a service onto its own server. Here
+# `include` simply stitches them into one local project for convenience.
+#
+# First-time setup:
+#   docker network create callbooking
+#   cp .env.example .env
+#   bash scripts/gen-jwt-keys.sh
+#   docker-compose up -d --build
+# ──────────────────────────────────────────────────────────────────
+
+include:
+  - docker-compose.infra.yml
+  - services/auth-service/docker-compose.yml
+  - services/booking-service/docker-compose.yml
+  - services/calendar-service/docker-compose.yml
+  - services/notification-service/docker-compose.yml
+  - services/analytics-service/docker-compose.yml
+
+networks:
+  default:
+    name: callbooking
+    external: true
+
+services:
+  # ════════════════════════ FRONTEND + GATEWAY ════════════════════
+  frontend:
+    build: ./frontend
+    environment:
+      VITE_API_BASE: ${VITE_API_BASE}
+    ports:
+      - "${FRONTEND_PORT}:5173"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5173/ >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  api-gateway:
+    build: ./infra/nginx
+    ports:
+      - "${GATEWAY_PORT}:80"
+    # Wait until upstreams are actually healthy: nginx resolves upstream
+    # hostnames at startup and would otherwise 502 (or fail) on cold start.
+    depends_on:
+      auth-service: { condition: service_healthy }
+      booking-service: { condition: service_healthy }
+      calendar-service: { condition: service_healthy }
+      analytics-service: { condition: service_healthy }
+      notification-ws: { condition: service_healthy }
+      frontend: { condition: service_healthy }
+      kafdrop: { condition: service_healthy }

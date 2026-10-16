@@ -1,0 +1,36 @@
+# ──────────────────────────────────────────────────────────────────
+# analytics-service: OLAP read model.
+#
+# Its datastore is ClickHouse (its own database `analytics`), which lives
+# in the shared infra file because it is a heavyweight columnar engine —
+# database-per-service is still honoured (no other service touches it).
+# Consumes booking.* from Kafka and serves aggregate stats over HTTP.
+# init_schema() retries until ClickHouse is reachable, so no hard
+# compose dependency is needed here.
+# ──────────────────────────────────────────────────────────────────
+
+networks:
+  default:
+    name: callbooking
+    external: true
+
+services:
+  analytics-service:
+    build: .
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
+      KAFKA_TOPIC_BOOKING_CREATED: ${KAFKA_TOPIC_BOOKING_CREATED}
+      KAFKA_TOPIC_BOOKING_CANCELLED: ${KAFKA_TOPIC_BOOKING_CANCELLED}
+      CLICKHOUSE_HOST: ${CLICKHOUSE_HOST}
+      CLICKHOUSE_PORT: ${CLICKHOUSE_PORT}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB}
+    ports:
+      - "${ANALYTICS_PORT}:8005"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8005/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
